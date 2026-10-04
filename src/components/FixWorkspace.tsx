@@ -6,10 +6,13 @@ import {
   Play,
   RotateCcw,
   ShieldCheck,
+  Server,
 } from 'lucide-react';
 
 interface FixWorkspaceProps {
   incident: Incident;
+  patchData: Patch;
+  codeDiffHunk: string;
   isPatched: boolean;
   onApplyPatch: () => void;
   onRevertPatch: () => void;
@@ -18,52 +21,20 @@ interface FixWorkspaceProps {
 
 export function FixWorkspace({
   incident,
+  patchData,
+  codeDiffHunk,
   isPatched,
   onApplyPatch,
   onRevertPatch,
   onRunReplay,
 }: FixWorkspaceProps) {
-  const patchData: Patch = {
-    id: 'patch_pos_mod_01',
-    incidentId: incident.id,
-    title: 'POSAdapter: iterate negative modifier state and emit REMOVE action',
-    reasonForChange:
-      'Conversational state captures negative modifiers in `item.modifiers.remove`, but MockPOSAdapter legacy loop only transformed `add` modifiers, dropping exclusions before kitchen ticket creation.',
-    affectedComponent: 'src/lib/posAdapter.ts',
-    riskLevel: 'LOW',
-    expectedBehavior:
-      'All elements in `item.modifiers.remove` must serialize as `{ action: "REMOVE", name: mod.name, priceDelta: 0 }` within the POSOrderPayload line item.',
-    author: 'fde-oncall@sidecar-pizza.internal',
-    timestamp: '2026-10-04T07:20:00Z',
-    version: '2.1.0-patch1',
-    codeDiff: `--- a/src/lib/posAdapter.ts
-+++ b/src/lib/posAdapter.ts
-@@ -82,6 +82,16 @@ export class MockPOSAdapter {
-       itemModifierCost += modMeta.priceDelta;
-     }
-
-+    // 2. Process REMOVE modifiers (Patch fix for INC-8492)
-+    for (const remMod of item.modifiers.remove || []) {
-+      const modMeta = this.resolveModifierMeta(remMod);
-+      posModifiers.push({
-+        modifierId: modMeta.id,
-+        name: modMeta.name,
-+        action: 'REMOVE',
-+        priceDelta: 0.0,
-+        targetFraction: 'WHOLE',
-+      });
-     }
- 
-     const itemTotal = (item.unitPrice + itemModifierCost) * item.quantity;`,
-  };
-
   return (
     <div className="bg-zinc-900/90 rounded-lg border border-zinc-800 overflow-hidden shadow-xl">
       <div className="px-4 py-3 bg-zinc-950/80 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <Code2 className="w-4 h-4 text-amber-400" />
           <span className="text-xs font-bold text-zinc-200">
-            Fix Workspace: Configuration & Adapter Patch
+            Fix Workspace: Runtime Configuration &amp; Adapter Patch
           </span>
           <span
             className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
@@ -72,7 +43,7 @@ export function FixWorkspace({
                 : 'bg-zinc-800 text-zinc-400 border-zinc-700'
             }`}
           >
-            {isPatched ? 'PATCH APPLIED (LIVE)' : 'UNPATCHED (PRODUCTION REPRO)'}
+            {isPatched ? 'PATCHED RUNTIME ACTIVE' : 'DEFECTIVE RUNTIME ACTIVE'}
           </span>
         </div>
 
@@ -81,17 +52,19 @@ export function FixWorkspace({
             <button
               onClick={onRevertPatch}
               className="flex items-center space-x-1.5 px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition"
+              title="Reverts the runtime adapter to reproducing the original defect"
             >
               <RotateCcw className="w-3 h-3 text-amber-400" />
-              <span>Revert Patch</span>
+              <span>Revert to Defective</span>
             </button>
           ) : (
             <button
               onClick={onApplyPatch}
               className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded shadow transition"
+              title="Swaps simulated runtime adapter to the patched implementation"
             >
               <GitCommit className="w-3.5 h-3.5" />
-              <span>Apply Fix Patch</span>
+              <span>Activate Patched Runtime</span>
             </button>
           )}
 
@@ -106,6 +79,17 @@ export function FixWorkspace({
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Runtime simulation notice */}
+        <div className="p-2.5 rounded bg-zinc-950/70 border border-zinc-800 text-[11px] text-zinc-400 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Server className="w-3.5 h-3.5 text-cyan-400" />
+            <span>
+              <strong>Simulated Deployment:</strong> Toggling the patch dynamically reconfigures the underlying TypeScript adapter in memory between defective and corrected states.
+            </span>
+          </div>
+          <span className="font-mono text-[10px] text-zinc-500">Live Memory Toggle</span>
+        </div>
+
         {/* Patch metadata bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
           <div className="p-2 rounded bg-zinc-950 border border-zinc-850">
@@ -132,11 +116,11 @@ export function FixWorkspace({
         {/* Diff view */}
         <div className="border border-zinc-800 rounded bg-zinc-950 overflow-hidden font-mono text-xs">
           <div className="px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Unified Diff: MockPOSAdapter.transformOrder()</span>
-            <span className="text-zinc-500">TypeScript · Line 82</span>
+            <span>Unified Diff: {patchData.title}</span>
+            <span className="text-zinc-500">TypeScript</span>
           </div>
           <pre className="p-3 text-[11px] leading-relaxed overflow-x-auto text-zinc-300">
-            {patchData.codeDiff.split('\n').map((line, idx) => {
+            {codeDiffHunk.split('\n').map((line, idx) => {
               const isAdd = line.startsWith('+');
               const isDel = line.startsWith('-');
               const isHunk = line.startsWith('@@');

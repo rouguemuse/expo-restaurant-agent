@@ -5,11 +5,13 @@ import { CheckCircle2, XCircle, AlertCircle, Layers } from 'lucide-react';
 interface OrderStateInspectorProps {
   orderState: AgentOrderState;
   posPayload?: POSOrderPayload;
+  scenarioSubtitle?: string;
 }
 
 export function OrderStateInspector({
   orderState,
   posPayload,
+  scenarioSubtitle,
 }: OrderStateInspectorProps) {
   const firstItem = orderState.items[0];
   const firstPosItem = posPayload?.lineItems?.[0];
@@ -34,10 +36,16 @@ export function OrderStateInspector({
         </span>
       </div>
 
+      {scenarioSubtitle && (
+        <div className="px-4 py-1.5 bg-zinc-950/40 border-b border-zinc-850 text-[11px] text-zinc-400">
+          {scenarioSubtitle}
+        </div>
+      )}
+
       <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Layer 1: Conversational Order State */}
         <div className="border border-zinc-800 rounded-md p-3 bg-zinc-950/60">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-850">
             <span className="text-xs font-semibold text-emerald-400 flex items-center space-x-1">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>Layer 1: Agent Conversational State</span>
@@ -59,8 +67,23 @@ export function OrderStateInspector({
             <div>
               <span className="text-zinc-500">item:</span>{' '}
               <span className="text-zinc-200 font-bold">{firstItem?.itemName}</span>{' '}
-              <span className="text-zinc-500">(qty: {firstItem?.quantity})</span>
+              <span className="text-zinc-500 font-bold text-amber-300">(qty: {firstItem?.quantity})</span>
             </div>
+
+            {/* Split toppings for Scenario 2 */}
+            {(firstItem?.modifiers?.halfOneAdd || firstItem?.modifiers?.halfTwoAdd) && (
+              <div className="mt-2 pt-2 border-t border-zinc-850">
+                <span className="text-zinc-500 block mb-1">fractional_splits:</span>
+                <div className="pl-2 space-y-1">
+                  <div className="text-cyan-300">
+                    1st Half: {JSON.stringify(firstItem.modifiers.halfOneAdd)}
+                  </div>
+                  <div className="text-amber-300">
+                    2nd Half: {JSON.stringify(firstItem.modifiers.halfTwoAdd)}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-2 pt-2 border-t border-zinc-850">
               <span className="text-zinc-500 block mb-1">modifiers:</span>
@@ -103,7 +126,7 @@ export function OrderStateInspector({
               : 'border-zinc-800 bg-zinc-950/60'
           }`}
         >
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-850">
             <span className="text-xs font-semibold text-cyan-400 flex items-center space-x-1">
               {isModifierLost ? (
                 <XCircle className="w-3.5 h-3.5 text-rose-400" />
@@ -132,7 +155,7 @@ export function OrderStateInspector({
               <div>
                 <span className="text-zinc-500">line_items:</span>{' '}
                 <span className="text-zinc-200 font-bold">{firstPosItem?.name}</span>{' '}
-                <span className="text-zinc-500">(qty: {firstPosItem?.quantity})</span>
+                <span className="text-zinc-500 font-bold text-amber-300">(qty: {firstPosItem?.quantity})</span>
               </div>
 
               <div className="mt-2 pt-2 border-t border-zinc-850">
@@ -150,7 +173,12 @@ export function OrderStateInspector({
                       >
                         <span className="font-semibold">
                           {mod.action === 'REMOVE' ? '[-] REMOVE ' : '[+] ADD '}
-                          {mod.name}
+                          {mod.name}{' '}
+                          {mod.targetFraction && (
+                            <span className="text-zinc-400 text-[10px]">
+                              ({mod.targetFraction})
+                            </span>
+                          )}
                         </span>
                         <span className="text-zinc-500 text-[10px]">
                           +${mod.priceDelta.toFixed(2)}
@@ -178,7 +206,7 @@ export function OrderStateInspector({
             </div>
           ) : (
             <div className="p-4 text-center text-zinc-500 text-xs italic">
-              POS Payload not generated or failed transformation.
+              POS Payload not generated or rejected by availability rule.
             </div>
           )}
         </div>

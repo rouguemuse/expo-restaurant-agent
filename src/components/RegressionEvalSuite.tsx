@@ -5,12 +5,14 @@ import { Play, CheckCircle2, XCircle, ShieldCheck, AlertTriangle } from 'lucide-
 interface RegressionEvalSuiteProps {
   evalRun: EvalRun;
   isPatched: boolean;
+  scenarioTitle?: string;
   onRunEval: () => void;
 }
 
 export function RegressionEvalSuite({
   evalRun,
   isPatched,
+  scenarioTitle,
   onRunEval,
 }: RegressionEvalSuiteProps) {
   return (
@@ -19,7 +21,7 @@ export function RegressionEvalSuite({
         <div className="flex items-center space-x-2">
           <ShieldCheck className="w-4 h-4 text-cyan-400" />
           <span className="text-xs font-bold text-zinc-200">
-            Deterministic Regression Suite: Modifier Boundary Matrix
+            Deterministic Regression Suite: {scenarioTitle || 'Scenario Boundary Matrix'}
           </span>
           <span className="text-xs text-zinc-500">·</span>
           <span className="text-xs font-mono text-zinc-400">
@@ -41,10 +43,10 @@ export function RegressionEvalSuite({
         <div className="p-3 rounded bg-zinc-900/80 border border-zinc-800">
           <span className="text-[10px] font-mono uppercase text-zinc-500 block">Suite Coverage</span>
           <span className="text-lg font-bold text-zinc-100">
-            {evalRun.totalCases} Variations Tested
+            {evalRun.totalCases} Variations Evaluated
           </span>
           <p className="text-[11px] text-zinc-400 mt-0.5">
-            Negation idioms, compound exclusions, edge cases &amp; regression guard
+            Real utterance interpretation + structured boundary assertions
           </p>
         </div>
 
@@ -72,10 +74,10 @@ export function RegressionEvalSuite({
 
         <div className="p-3 rounded bg-zinc-900/80 border border-zinc-800">
           <span className="text-[10px] font-mono uppercase text-zinc-500 block">
-            Regression Guard Principle
+            Deterministic Engine
           </span>
           <p className="text-[11px] text-zinc-300 leading-tight mt-1">
-            <span className="text-amber-400 font-semibold">&quot;No, onions are fine&quot;</span> test case guarantees that naive &quot;no&quot; substring matching doesn&apos;t erroneously strip requested toppings.
+            Every test case executes live TypeScript NLU parsing and Mock POS translation. No hardcoded mock assertions.
           </p>
         </div>
       </div>

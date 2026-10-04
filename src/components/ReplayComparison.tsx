@@ -6,6 +6,7 @@ interface ReplayComparisonProps {
   beforePayload?: POSOrderPayload;
   afterPayload?: POSOrderPayload;
   isPatched: boolean;
+  scenarioTag: string;
   onReplayClick: () => void;
 }
 
@@ -13,6 +14,7 @@ export function ReplayComparison({
   beforePayload,
   afterPayload,
   isPatched,
+  scenarioTag,
   onReplayClick,
 }: ReplayComparisonProps) {
   const beforeFirstItem = beforePayload?.lineItems[0];
@@ -53,23 +55,28 @@ export function ReplayComparison({
 
           <div className="font-mono text-xs space-y-1.5">
             <div className="text-zinc-400">
-              Item: <span className="text-zinc-200 font-semibold">{beforeFirstItem?.name}</span>
+              Item: <span className="text-zinc-200 font-semibold">{beforeFirstItem?.name || 'Item unavailable'}</span>{' '}
+              <span className="text-amber-300">(qty: {beforeFirstItem?.quantity || 1})</span>
             </div>
             <div className="text-zinc-400">Printed Modifiers on Kitchen Display:</div>
             <div className="pl-3 space-y-1 py-1">
               {beforeFirstItem?.modifiers.map((m, idx) => (
                 <div key={idx} className="text-emerald-400">
-                  + {m.name}
+                  {m.action === 'REMOVE' ? '- ' : '+ '}
+                  {m.name}{' '}
+                  {m.targetFraction && <span className="text-zinc-500 text-[10px]">({m.targetFraction})</span>}
                 </div>
               ))}
-              {!beforeHasNegative && (
+              {scenarioTag === 'scenario_1_lost_modifier' && !beforeHasNegative && (
                 <div className="text-rose-400 font-semibold bg-rose-950/40 px-1 py-0.5 rounded">
-                  [!] MISSING: Negative exclusions lost! Defaults to adding onions!
+                  [!] DEFECT: Negative exclusions lost during POS serialization!
                 </div>
               )}
-            </div>
-            <div className="pt-2 border-t border-rose-900/40 text-[11px] text-zinc-400">
-              Resulting kitchen outcome: <span className="text-rose-300 font-medium">Burger cooked with onions. Customer complains at pickup counter.</span>
+              {scenarioTag === 'scenario_2_half_and_half' && (
+                <div className="text-rose-400 font-semibold bg-rose-950/40 px-1 py-0.5 rounded">
+                  [!] DEFECT: Both toppings marked WHOLE pie! Split was flattened.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -104,7 +111,8 @@ export function ReplayComparison({
 
           <div className="font-mono text-xs space-y-1.5">
             <div className="text-zinc-400">
-              Item: <span className="text-zinc-200 font-semibold">{afterFirstItem?.name}</span>
+              Item: <span className="text-zinc-200 font-semibold">{afterFirstItem?.name || 'Handled by rule'}</span>{' '}
+              <span className="text-amber-300">(qty: {afterFirstItem?.quantity || 1})</span>
             </div>
             <div className="text-zinc-400">Printed Modifiers on Kitchen Display:</div>
             <div className="pl-3 space-y-1 py-1">
@@ -116,7 +124,8 @@ export function ReplayComparison({
                   }`}
                 >
                   {m.action === 'REMOVE' ? '- ' : '+ '}
-                  {m.name}
+                  {m.name}{' '}
+                  {m.targetFraction && <span className="text-cyan-400 text-[10px]">({m.targetFraction})</span>}
                 </div>
               ))}
             </div>
@@ -124,8 +133,8 @@ export function ReplayComparison({
               Resulting kitchen outcome:{' '}
               <span className="text-emerald-300 font-medium">
                 {isPatched
-                  ? 'KDS flags NO ONIONS and EXTRA PICKLES. Ticket prepared 100% accurately.'
-                  : 'Apply fix patch to simulate replay verification.'}
+                  ? 'Corrected payload received at kitchen make-line. Ticket prepared 100% accurately.'
+                  : 'Activate patched runtime to test replay verification.'}
               </span>
             </div>
           </div>

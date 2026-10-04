@@ -23,10 +23,11 @@ import {
 import { SIDECAR_ACCOUNT_HEALTH } from '@/data/scenario1Fixtures';
 import {
   MockPOSAdapter,
-  DEFAULT_DEFECTIVE_CONFIG,
   PATCHED_CONFIG,
+  TransformationConfig,
 } from '@/lib/posAdapter';
 import { runRegressionSuite, SCENARIO_1_EVAL_CASES } from '@/lib/evalEngine';
+import { WORKBENCH_SCENARIO_CONFIGS } from '@/data/scenarioWorkbenchConfig';
 import { EvalRun } from '@/types';
 
 export default function Home() {
@@ -39,43 +40,98 @@ export default function Home() {
   const currentTrace = getTraceById(currentIncident.primaryTraceId) || STORE_TRACES[0];
   const primaryCall = STORE_CALLS.find((c) => c.scenarioTag === currentIncident.scenarioId) || STORE_CALLS[0];
 
-  // Dynamic execution of Mock POS Adapter (Deterministic TypeScript!)
-  const unpatchedAdapter = new MockPOSAdapter(DEFAULT_DEFECTIVE_CONFIG);
-  const beforeTransformResult = unpatchedAdapter.transformOrder(primaryCall.orderState);
+  // Dynamic workbench configuration for the selected scenario
+  const scenarioConfig =
+    WORKBENCH_SCENARIO_CONFIGS[currentIncident.scenarioId] ||
+    WORKBENCH_SCENARIO_CONFIGS['scenario_1_lost_modifier'];
 
-  const activeAdapter = new MockPOSAdapter(isPatched ? PATCHED_CONFIG : DEFAULT_DEFECTIVE_CONFIG);
-  const currentTransformResult = activeAdapter.transformOrder(primaryCall.orderState);
+  // Eval cases for this scenario (Scenario 1 uses SCENARIO_1_EVAL_CASES, others use their configured cases)
+  const currentEvalCases =
+    currentIncident.scenarioId === 'scenario_1_lost_modifier'
+      ? SCENARIO_1_EVAL_CASES
+      : scenarioConfig.evalCases.length > 0
+      ? scenarioConfig.evalCases
+      : SCENARIO_1_EVAL_CASES;
+
+  // Active runtime configs based on scenario
+  const getScenarioConfigs = (patched: boolean): TransformationConfig => {
+    if (patched) {
+      return PATCHED_CONFIG;
+    }
+    // Isolate defects per scenario
+    return {
+      preserveNegativeModifiers: currentIncident.scenarioId !== 'scenario_1_lost_modifier',
+      supportHalfAndHalfSplits: currentIncident.scenarioId !== 'scenario_2_half_and_half',
+      enforceAvailabilityHours: currentIncident.scenarioId !== 'scenario_3_temporal_menu',
+      enableIdempotencyGuard: currentIncident.scenarioId !== 'scenario_7_webhook_retry',
+    };
+  };
+
+  // Dynamic execution of Mock POS Adapter (Deterministic TypeScript!)
+  const unpatchedAdapter = new MockPOSAdapter(getScenarioConfigs(false));
+  const beforeTransformResult = unpatchedAdapter.transformOrder(
+    primaryCall.orderState,
+    currentIncident.firstDetected
+  );
+
+  const activeAdapter = new MockPOSAdapter(getScenarioConfigs(isPatched));
+  const currentTransformResult = activeAdapter.transformOrder(
+    primaryCall.orderState,
+    currentIncident.firstDetected
+  );
 
   // Eval Suite state (dynamically executed)
   const [evalRun, setEvalRun] = useState<EvalRun>(() =>
-    runRegressionSuite(
-      SCENARIO_1_EVAL_CASES,
-      DEFAULT_DEFECTIVE_CONFIG
-    )
+    runRegressionSuite(currentEvalCases, getScenarioConfigs(false))
   );
 
   const handleApplyPatch = () => {
     setIsPatched(true);
-    // Execute regression suite with patched config
-    const run = runRegressionSuite(SCENARIO_1_EVAL_CASES, PATCHED_CONFIG, 'patch_pos_mod_01');
+    const run = runRegressionSuite(
+      currentEvalCases,
+      getScenarioConfigs(true),
+      scenarioConfig.patch.id
+    );
     setEvalRun(run);
   };
 
   const handleRevertPatch = () => {
     setIsPatched(false);
-    // Execute regression suite with unpatched config
-    const run = runRegressionSuite(SCENARIO_1_EVAL_CASES, DEFAULT_DEFECTIVE_CONFIG);
+    const run = runRegressionSuite(currentEvalCases, getScenarioConfigs(false));
     setEvalRun(run);
   };
 
   const handleRunReplay = () => {
-    // Triggers fresh transformation execution
     const run = runRegressionSuite(
-      SCENARIO_1_EVAL_CASES,
-      isPatched ? PATCHED_CONFIG : DEFAULT_DEFECTIVE_CONFIG,
-      isPatched ? 'patch_pos_mod_01' : undefined
+      currentEvalCases,
+      getScenarioConfigs(isPatched),
+      isPatched ? scenarioConfig.patch.id : undefined
     );
     setEvalRun(run);
+  };
+
+  // When changing selected incident, update eval run
+  const handleSelectIncidentFromQueue = (incidentId: string) => {
+    setSelectedIncidentId(incidentId);
+    setIsPatched(false);
+    const inc = getIncidentById(incidentId) || STORE_INCIDENTS[0];
+    const sCfg =
+      WORKBENCH_SCENARIO_CONFIGS[inc.scenarioId] ||
+      WORKBENCH_SCENARIO_CONFIGS['scenario_1_lost_modifier'];
+    const cases =
+      inc.scenarioId === 'scenario_1_lost_modifier'
+        ? SCENARIO_1_EVAL_CASES
+        : sCfg.evalCases.length > 0
+        ? sCfg.evalCases
+        : SCENARIO_1_EVAL_CASES;
+    setEvalRun(
+      runRegressionSuite(cases, {
+        preserveNegativeModifiers: inc.scenarioId !== 'scenario_1_lost_modifier',
+        supportHalfAndHalfSplits: inc.scenarioId !== 'scenario_2_half_and_half',
+        enforceAvailabilityHours: inc.scenarioId !== 'scenario_3_temporal_menu',
+        enableIdempotencyGuard: inc.scenarioId !== 'scenario_7_webhook_retry',
+      })
+    );
   };
 
   return (
@@ -83,7 +139,7 @@ export default function Home() {
       <HeaderNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* VIEW 1: SCENARIO 1 VERTICAL SLICE WORKBENCH */}
+        {/* VIEW 1: SCENARIO WORKBENCH */}
         {activeTab === 'scenario-workbench' && (
           <div className="space-y-6">
             {/* Context Header */}
@@ -122,12 +178,12 @@ export default function Home() {
                   <span className="text-rose-400 font-bold">100% (Deterministic)</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500 text-[10px] block">Weekly Exposure</span>
+                  <span className="text-zinc-500 text-[10px] block">Weekly Modeled Exposure</span>
                   <span className="text-emerald-400 font-bold">${currentIncident.estimatedRevenueExposure}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500 text-[10px] block">Target Scenario</span>
-                  <span className="text-zinc-300">The Lost Modifier (No Onions)</span>
+                  <span className="text-zinc-500 text-[10px] block">Active Scenario Target</span>
+                  <span className="text-zinc-300 truncate block">{scenarioConfig.scenarioTitle}</span>
                 </div>
               </div>
             </div>
@@ -152,12 +208,13 @@ export default function Home() {
                   Step 2: Inspect Multi-Layer Order State
                 </span>
                 <span className="text-[11px] text-zinc-500">
-                  Observe where negative modifiers disappear
+                  Compare Conversational State vs POS Payload
                 </span>
               </div>
               <OrderStateInspector
                 orderState={primaryCall.orderState}
                 posPayload={currentTransformResult.payload}
+                scenarioSubtitle={scenarioConfig.inspectorSubtitle}
               />
             </section>
 
@@ -165,14 +222,16 @@ export default function Home() {
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold">
-                  Step 3: Fix Workspace & Code Diff
+                  Step 3: Fix Workspace &amp; Runtime Patch
                 </span>
                 <span className="text-[11px] text-zinc-500">
-                  Apply patch to POS serialization logic
+                  Target Component: {scenarioConfig.diffComponent}
                 </span>
               </div>
               <FixWorkspace
                 incident={currentIncident}
+                patchData={scenarioConfig.patch}
+                codeDiffHunk={scenarioConfig.diffHunk}
                 isPatched={isPatched}
                 onApplyPatch={handleApplyPatch}
                 onRevertPatch={handleRevertPatch}
@@ -194,6 +253,7 @@ export default function Home() {
                 beforePayload={beforeTransformResult.payload}
                 afterPayload={currentTransformResult.payload}
                 isPatched={isPatched}
+                scenarioTag={currentIncident.scenarioId}
                 onReplayClick={handleRunReplay}
               />
             </section>
@@ -205,12 +265,13 @@ export default function Home() {
                   Step 5: Run Deterministic Regression Suite
                 </span>
                 <span className="text-[11px] text-zinc-500">
-                  Ensure fix handles negation idioms without introducing regressions
+                  Executes live NLU parsing + Mock POS translation on each test case
                 </span>
               </div>
               <RegressionEvalSuite
                 evalRun={evalRun}
                 isPatched={isPatched}
+                scenarioTitle={scenarioConfig.scenarioTitle}
                 onRunEval={handleRunReplay}
               />
             </section>
@@ -219,7 +280,7 @@ export default function Home() {
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold">
-                  Step 6: Engineering Handoff & Operator Translation
+                  Step 6: Engineering Handoff &amp; Operator Translation
                 </span>
                 <span className="text-[11px] text-zinc-500">
                   Linear / Jira Ticket + Plain English Operator Summary
@@ -237,7 +298,7 @@ export default function Home() {
               incidents={STORE_INCIDENTS}
               selectedIncidentId={selectedIncidentId}
               onSelectIncident={(id) => {
-                setSelectedIncidentId(id);
+                handleSelectIncidentFromQueue(id);
                 setActiveTab('scenario-workbench');
               }}
             />

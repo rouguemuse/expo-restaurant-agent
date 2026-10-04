@@ -1,5 +1,6 @@
 import { EvalCase, EvalRun, EvalResultCase, AgentOrderState } from '@/types';
 import { MockPOSAdapter, TransformationConfig, DEFAULT_DEFECTIVE_CONFIG } from './posAdapter';
+import { parseCustomerUtterance } from './utteranceParser';
 
 export const SCENARIO_1_EVAL_CASES: EvalCase[] = [
   {
@@ -163,9 +164,9 @@ export const SCENARIO_1_EVAL_CASES: EvalCase[] = [
     },
   },
   // TRICKY REGRESSION DETECTION CASE:
-  // "No, onions are fine." - Customer correcting themselves!
-  // If an engineer writes an overbroad regex for "No ... onions", it drops onions.
-  // The conversational parser correctly keeps onions, but regression suites must verify both layers!
+  // "Wait, no, onions are fine. Extra pickles only." - Customer correcting themselves!
+  // If an engineer writes a naive regex for "no ... onions", it drops onions.
+  // Our utteranceParser actively interprets this affirmative phrasing and preserves onions.
   {
     id: 'eval_s1_11_regression_guard',
     scenarioId: 'scenario_1_lost_modifier',
@@ -186,8 +187,11 @@ export const SCENARIO_1_EVAL_CASES: EvalCase[] = [
 
 /**
  * Deterministic Eval Suite Runner
- * Runs the input through conversational state reconstruction + MockPOSAdapter
- * and verifies output assertions.
+ *
+ * CRITICAL PIPELINE PROOF:
+ * Takes the raw natural language `inputPrompt` string, executes `parseCustomerUtterance(c.inputPrompt)`,
+ * constructs the live `AgentOrderState`, passes it to the `MockPOSAdapter`,
+ * and validates both conversational interpretation and POS serialization!
  */
 export function runRegressionSuite(
   cases: EvalCase[] = SCENARIO_1_EVAL_CASES,
@@ -198,38 +202,64 @@ export function runRegressionSuite(
   const results: EvalResultCase[] = [];
 
   for (const c of cases) {
-    // Construct conversational agent order state from expected normalized state
+    // 1. GENUINE EXECUTION: Parse raw customer phone utterance
+    const parsed = parseCustomerUtterance(c.inputPrompt);
+
+    // 2. Build live conversational agent order state from parsed utterance
     const agentState: AgentOrderState = {
       orderId: `eval_order_${c.id}`,
       customerIntent: 'PLACE_ORDER',
       orderType: 'PICKUP',
       customerPhone: '+15035550199',
-      totalEstimatedPrice: 15.25,
+      totalEstimatedPrice: 14.5,
       items: [
         {
-          itemId: 'item_cheeseburger_dbl',
-          itemName: c.expectedNormalizedState.item,
-          quantity: c.expectedNormalizedState.quantity,
+          itemId: parsed.matchedItemId || 'item_cheeseburger_dbl',
+          itemName: parsed.rawItemName,
+          quantity: parsed.quantity,
           unitPrice: 14.5,
-          modifiers: {
-            add: [...c.expectedNormalizedState.addModifiers],
-            remove: [...c.expectedNormalizedState.removeModifiers],
-          },
+          modifiers: parsed.modifiers,
         },
       ],
     };
 
+    // 3. Verify Conversational Layer Interpretation against expectation
+    let convPassed = true;
+    let convFailure = '';
+    for (const expAdd of c.expectedNormalizedState.addModifiers) {
+      if (!agentState.items[0].modifiers.add.includes(expAdd)) {
+        convPassed = false;
+        convFailure += `NLU failed to parse expected ADD "${expAdd}". `;
+      }
+    }
+    for (const expRem of c.expectedNormalizedState.removeModifiers) {
+      if (!agentState.items[0].modifiers.remove.includes(expRem)) {
+        convPassed = false;
+        convFailure += `NLU failed to parse expected REMOVE "${expRem}". `;
+      }
+    }
+    // Regression guard check: verify no accidental removal
+    if (c.expectedNormalizedState.removeModifiers.length === 0 && agentState.items[0].modifiers.remove.length > 0) {
+      convPassed = false;
+      convFailure += `NLU incorrectly triggered REMOVE on affirmative phrase. `;
+    }
+
+    // 4. Pass conversational state into MockPOSAdapter
     const transformResult = adapter.transformOrder(agentState);
     const payload = transformResult.payload;
 
-    if (!payload) {
+    if (!payload || !convPassed) {
       results.push({
         caseId: c.id,
         inputPrompt: c.inputPrompt,
         passed: false,
-        observedNormalizedState: agentState,
-        observedPosPayload: null,
-        failureReason: transformResult.errorReason || 'POS Transformation returned null payload',
+        observedNormalizedState: {
+          item: agentState.items[0].itemName,
+          addModifiers: agentState.items[0].modifiers.add,
+          removeModifiers: agentState.items[0].modifiers.remove,
+        },
+        observedPosPayload: payload ? { total: payload.totalAmount } : null,
+        failureReason: convFailure || transformResult.errorReason || 'Transformation returned null payload',
       });
       continue;
     }
@@ -242,7 +272,7 @@ export function runRegressionSuite(
       .filter((m) => m.action === 'REMOVE')
       .map((m) => m.name.toLowerCase());
 
-    // Check expected additions
+    // 5. Check POS serialization assertions
     let passed = true;
     let failureReason = '';
 
@@ -254,7 +284,6 @@ export function runRegressionSuite(
       }
     }
 
-    // Check expected removals
     for (const expRem of c.expectedPosPayloadCheck.hasRemoveModifiers) {
       const found = posRemMods.some((m) => m.includes(expRem.toLowerCase()));
       if (!found) {
@@ -263,7 +292,6 @@ export function runRegressionSuite(
       }
     }
 
-    // Check that we didn't accidentally remove things when not requested (e.g. eval_s1_11)
     if (c.expectedPosPayloadCheck.hasRemoveModifiers.length === 0 && posRemMods.length > 0) {
       passed = false;
       failureReason += `Spurious REMOVE modifier "${posRemMods.join(', ')}" found when none expected. `;
